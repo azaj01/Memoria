@@ -124,7 +124,7 @@ Cursor:  Database is ready. Installing TrustMem now:
              --extra-index-url https://test.pypi.org/simple/ \
              trust-mem-lite
 
-You:     [output] Successfully installed trust-mem-lite-0.2.2
+You:     [output] Successfully installed trust-mem-lite-0.2.5
 
 Cursor:  Configuring for Cursor with your SiliconFlow endpoint:
 
@@ -198,6 +198,7 @@ pip install --index-url https://pypi.org/simple/ --extra-index-url https://test.
 cd your-project
 trustmem init
 # Restart your AI tool — done!
+# Database tables are created automatically when the MCP server starts.
 ```
 
 ### 4. Verify
@@ -212,7 +213,7 @@ TrustMem Status
   Database:    connected (mysql+pymysql://root:***@localhost:6001/trustmem)
   Tables:      8 tables OK
   Embedding:   local (all-MiniLM-L6-v2, dim=384)
-  Kiro:        .kiro/settings/mcp.json ✓  |  .kiro/steering/memory.md ✓ (v0.2.2)
+  Kiro:        .kiro/settings/mcp.json ✓  |  .kiro/steering/memory.md ✓ (v0.2.5)
   Cursor:      not detected
   Claude Code: not detected
 ```
@@ -285,6 +286,8 @@ TrustMem needs an embedding model to vectorize memories for semantic search.
 
 **Recommendation**: If you already have an embedding service (OpenAI, Ollama, SiliconFlow), use it — avoids the local model download and cold-start latency. Otherwise, local works well; the download only happens once.
 
+**Configure embedding before your AI tool starts for the first time** — the MCP server creates tables using the configured dimension, so there's no mismatch.
+
 ```bash
 # Local (default) — no extra flags needed
 trustmem init
@@ -302,6 +305,14 @@ trustmem init \
 ```
 
 All flags are written into the `env` block of `mcp.json` automatically — no manual editing needed.
+
+#### Switching Embedding Provider
+
+If you want to switch providers after tables already exist, run `migrate --force` to ALTER the embedding column (this clears existing embeddings — memories are kept but will need to be re-embedded manually via `trustmem governance`):
+
+```bash
+trustmem migrate --dim 1536 --force
+```
 
 ---
 
@@ -436,10 +447,10 @@ AI:  → calls memory_diff(source="eval_sqlite")   ← preview first
 
 | Command | Description |
 |---------|-------------|
-| `trustmem init` | Configure everything (tables + MCP + rules) |
+| `trustmem init` | Write MCP config + steering rules (tables created on first MCP start) |
 | `trustmem status` | Show configuration and rule versions |
 | `trustmem update-rules` | Update steering rules to latest version |
-| `trustmem migrate` | Create/update database tables only |
+| `trustmem migrate` | Create/update database tables manually |
 | `trustmem health` | Check memory service health |
 | `trustmem governance` | Run memory cleanup and maintenance |
 
