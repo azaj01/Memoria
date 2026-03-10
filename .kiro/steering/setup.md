@@ -86,6 +86,13 @@ pip install --index-url https://pypi.org/simple/ --extra-index-url https://test.
 # Add embedding flags based on Question 3 answer — see "Embedding provider flags" section below
 cd <user-project>
 trustmem init  # + embedding flags if applicable
+
+# If user didn't provide embedding config via flags, remind them:
+# "The config file has been created with all environment variables (even empty ones).
+# If you need to customize (database URL, embedding settings), edit the file now before restarting:
+# - Kiro: .kiro/settings/mcp.json
+# - Cursor: .cursor/mcp.json
+# - Claude Code: .claude/mcp.json"
 ```
 
 ### Path B: MatrixOne Cloud

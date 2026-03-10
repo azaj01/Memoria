@@ -199,9 +199,15 @@ pip install --index-url https://pypi.org/simple/ --extra-index-url https://test.
 ```bash
 cd your-project
 trustmem init
-# Restart your AI tool — done!
-# Database tables are created automatically when the MCP server starts.
 ```
+
+This creates MCP config files with **all environment variables** (even if empty) as a guide. If you need to customize (e.g., change database URL, add embedding API key), edit the generated config before restarting:
+
+- **Kiro**: `.kiro/settings/mcp.json`
+- **Cursor**: `.cursor/mcp.json`
+- **Claude Code**: `.claude/mcp.json`
+
+Then restart your AI tool — database tables are created automatically when the MCP server starts.
 
 ### 4. Verify
 
