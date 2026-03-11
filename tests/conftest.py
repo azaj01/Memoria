@@ -8,6 +8,16 @@ from sqlalchemy.orm import sessionmaker
 TEST_EMBEDDING_DIM = 384
 
 
+def pytest_collection_modifyitems(config, items):
+    try:
+        import sentence_transformers  # noqa: F401
+    except ImportError:
+        skip = pytest.mark.skip(reason="sentence_transformers not installed")
+        for item in items:
+            if item.get_closest_marker("local_embedding"):
+                item.add_marker(skip)
+
+
 @pytest.fixture(scope="session")
 def db_engine():
     """Create test database engine. Uses MEMORIA_* env vars or defaults."""

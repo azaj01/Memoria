@@ -149,6 +149,7 @@ class TestStartupValidation:
             finally:
                 _local_model_cache.update(old)
 
+    @pytest.mark.local_embedding
     def test_valid_config_succeeds(self):
         """Valid local config should work."""
         c = EmbeddingClient(provider="local", model="all-MiniLM-L6-v2", dim=384)
@@ -184,31 +185,33 @@ class TestKnownDimensions:
 
 class TestSettingsInfer:
     def test_known_model_auto_infers_dim(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_PROVIDER", "openai")
         monkeypatch.setenv("EMBEDDING_MODEL", "BAAI/bge-m3")
         monkeypatch.setenv("EMBEDDING_DIM", "0")
         from importlib import reload
-        import config.settings as s
+        import memoria.config as s
         reload(s)
-        settings = s.Settings()
+        settings = s.MemoriaSettings()
         assert settings.embedding_dim == 1024
 
     def test_explicit_dim_preserved(self, monkeypatch):
         monkeypatch.setenv("EMBEDDING_MODEL", "BAAI/bge-m3")
         monkeypatch.setenv("EMBEDDING_DIM", "1024")
         from importlib import reload
-        import config.settings as s
+        import memoria.config as s
         reload(s)
-        settings = s.Settings()
+        settings = s.MemoriaSettings()
         assert settings.embedding_dim == 1024
 
     def test_unknown_model_no_dim_raises(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_PROVIDER", "openai")
         monkeypatch.setenv("EMBEDDING_MODEL", "my-unknown-model")
         monkeypatch.setenv("EMBEDDING_DIM", "0")
         from importlib import reload
-        import config.settings as s
+        import memoria.config as s
         reload(s)
         with pytest.raises(Exception, match="not in KNOWN_DIMENSIONS"):
-            s.Settings()
+            s.MemoriaSettings()
 
 
 class TestSaTypesEmbeddingDim:

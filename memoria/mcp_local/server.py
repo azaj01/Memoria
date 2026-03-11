@@ -78,7 +78,7 @@ class EmbeddedBackend(MemoryBackend):
                 except Exception as e:
                     logger.warning("Auto-migrate failed: %s", e)
             else:
-                from api.database import SessionLocal
+                from memoria.api.database import SessionLocal
                 self._engine = None  # dev mode: engine lives inside SessionLocal
                 self._db_factory = SessionLocal
             from memoria.core.memory.factory import create_editor, create_memory_service
@@ -439,7 +439,7 @@ class EmbeddedBackend(MemoryBackend):
             # Standalone mode: db_url was given, engine is ours.
             return str(self._engine.url.database)
         # Dev mode: engine lives inside SessionLocal (api.database).
-        from api.database import SessionLocal
+        from memoria.api.database import SessionLocal
         return SessionLocal.kw["bind"].url.database
 
     def _get_active_branch(self, user_id: str) -> str:
@@ -532,7 +532,7 @@ class EmbeddedBackend(MemoryBackend):
         if self._engine is not None:
             return self._engine.url
         # Dev mode: engine lives inside SessionLocal.
-        from api.database import SessionLocal
+        from memoria.api.database import SessionLocal
         return SessionLocal.kw["bind"].url
 
     def snapshot_create(self, user_id: str, name: str, description: str) -> dict:

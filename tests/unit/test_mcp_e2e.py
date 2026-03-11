@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from mo_memory_mcp.server import MemoryBackend, create_server
+from memoria.mcp_local.server import MemoryBackend, create_server
 
 
 # ── Fake backend ──────────────────────────────────────────────────────

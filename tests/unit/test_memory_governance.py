@@ -146,7 +146,7 @@ class TestVectorIndexHealth:
 
         scheduler = self._make_scheduler(mock_db)
         with patch("memoria.core.memory.tabular.governance.VectorManager", return_value=vm), \
-             patch("api.database._mo_client", MagicMock()):
+             patch("memoria.api.database._mo_client", MagicMock()):
             health = scheduler._check_vector_index_health()
 
         # Both tables use same mock, check mem_memories
@@ -163,7 +163,7 @@ class TestVectorIndexHealth:
 
         scheduler = self._make_scheduler(mock_db)
         with patch("memoria.core.memory.tabular.governance.VectorManager", return_value=vm), \
-             patch("api.database._mo_client", MagicMock()):
+             patch("memoria.api.database._mo_client", MagicMock()):
             health = scheduler._check_vector_index_health()
 
         # ratio=1000 → ratio >= 1000 → needs_rebuild
@@ -180,7 +180,7 @@ class TestVectorIndexHealth:
         vm.get_ivf_stats.side_effect = Exception("index not found")
         scheduler = self._make_scheduler(mock_db)
         with patch("memoria.core.memory.tabular.governance.VectorManager", return_value=vm), \
-             patch("api.database._mo_client", MagicMock()):
+             patch("memoria.api.database._mo_client", MagicMock()):
             health = scheduler._check_vector_index_health()
         assert "error" in health["mem_memories"]
 
@@ -200,7 +200,7 @@ class TestRebuildVectorIndex:
 
         scheduler = self._make_scheduler(mock_db)
         with patch("memoria.core.memory.tabular.governance.VectorManager", return_value=vm), \
-             patch("api.database._mo_client", MagicMock()):
+             patch("memoria.api.database._mo_client", MagicMock()):
             with patch("matrixone.sqlalchemy_ext.vector_index.VectorOpType"):
                 result = scheduler.rebuild_vector_index("mem_memories")
 
@@ -223,7 +223,7 @@ class TestRebuildVectorIndex:
 
         scheduler = self._make_scheduler(mock_db)
         with patch("memoria.core.memory.tabular.governance.VectorManager", return_value=vm), \
-             patch("api.database._mo_client", MagicMock()):
+             patch("memoria.api.database._mo_client", MagicMock()):
             with patch("matrixone.sqlalchemy_ext.vector_index.VectorOpType"):
                 result = scheduler.rebuild_vector_index("mem_memories")
 

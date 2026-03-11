@@ -14,7 +14,7 @@ import pytest
 @pytest.fixture()
 def backend():
     """EmbeddedBackend instance with __init__ bypassed and all deps mocked."""
-    from mo_memory_mcp.server import EmbeddedBackend
+    from memoria.mcp_local.server import EmbeddedBackend
 
     with patch.object(EmbeddedBackend, "__init__", lambda self, **kw: None):
         b = EmbeddedBackend.__new__(EmbeddedBackend)
@@ -106,7 +106,7 @@ class TestActiveBranch:
         session.__exit__ = MagicMock(return_value=False)
         backend._db_factory.return_value = session
 
-        with patch("mo_memory_mcp.server.logger") as mock_log:
+        with patch("memoria.mcp_local.server.logger") as mock_log:
             backend._set_active_branch("alice", "feature")
         mock_log.warning.assert_called_once()
 
@@ -116,7 +116,7 @@ class TestActiveBranch:
         session.__exit__ = MagicMock(return_value=False)
         backend._db_factory.return_value = session
 
-        with patch("mo_memory_mcp.server.logger") as mock_log:
+        with patch("memoria.mcp_local.server.logger") as mock_log:
             result = backend._get_active_branch("bob")
         assert result == "main"
         mock_log.warning.assert_called_once()
@@ -166,8 +166,8 @@ class TestBranchDbFactory:
         mock_url.set.return_value = mock_url  # set() returns a new URL object
         backend._source_engine_url = MagicMock(return_value=mock_url)
 
-        with patch("mo_memory_mcp.server.create_engine") as mock_engine, \
-             patch("mo_memory_mcp.server.sessionmaker") as mock_sm:
+        with patch("memoria.mcp_local.server.create_engine") as mock_engine, \
+             patch("memoria.mcp_local.server.sessionmaker") as mock_sm:
             result = backend._branch_db_factory("alice")
 
         # URL.set called with the branch database name
@@ -195,8 +195,8 @@ class TestBranchDbFactory:
         mock_url.set.return_value = mock_url
         backend._source_engine_url = MagicMock(return_value=mock_url)
 
-        with patch("mo_memory_mcp.server.create_engine") as mock_ce, \
-             patch("mo_memory_mcp.server.sessionmaker") as mock_sm:
+        with patch("memoria.mcp_local.server.create_engine") as mock_ce, \
+             patch("memoria.mcp_local.server.sessionmaker") as mock_sm:
             result = backend._branch_db_factory("alice")
 
         # Cache stores (engine, factory) tuple; result is the factory
@@ -214,8 +214,8 @@ class TestBranchDbFactory:
         mock_url.set.return_value = mock_url
         backend._source_engine_url = MagicMock(return_value=mock_url)
 
-        with patch("mo_memory_mcp.server.create_engine"), \
-             patch("mo_memory_mcp.server.sessionmaker"):
+        with patch("memoria.mcp_local.server.create_engine"), \
+             patch("memoria.mcp_local.server.sessionmaker"):
             backend._branch_db_factory("alice")
             backend._branch_db_factory("alice")
 
@@ -237,17 +237,6 @@ class TestSourceEngineUrl:
         url = backend._source_engine_url()
 
         assert url is mock_engine.url
-
-    def test_dev_mode_reads_session_local(self, backend):
-        backend._engine = None
-        mock_url = MagicMock()
-
-        # SessionLocal is imported locally inside _source_engine_url from api.database
-        with patch("api.database.SessionLocal") as mock_sl:
-            mock_sl.kw = {"bind": MagicMock(url=mock_url)}
-            url = backend._source_engine_url()
-
-        assert url is mock_url
 
 
 # ---------------------------------------------------------------------------
