@@ -212,14 +212,13 @@ class MemoryRetriever(DbConsumer):
             stats.keyword_attempted = True
             try:
                 from matrixone.sqlalchemy_ext import boolean_match
-                ft = boolean_match("content").must(query_text)
-                # SELECT the MATCH score as a continuous BM25 relevance value.
-                # compile() returns a complete SQL literal (e.g.
-                # "MATCH(content) AGAINST('+term' IN BOOLEAN MODE)") with the
-                # query text inlined by the SDK — no bind-parameter placeholders.
-                # We intentionally delegate escaping to the SDK rather than
-                # hand-rolling format()+replace("'","''"), which would be the
-                # classic SQL-injection anti-pattern.
+                # Strip characters that MySQL fulltext boolean mode treats as
+                # operators or that would break the inlined SQL literal.
+                # boolean_match.compile() inlines the text without escaping.
+                _safe = query_text.replace("'", "").replace('"', "").replace("\\", "")
+                ft = boolean_match("content").must(_safe)
+                # compile() returns a complete SQL literal, e.g.
+                # "MATCH(content) AGAINST('+term' IN BOOLEAN MODE)"
                 ft_sql = ft.compile()
                 assert ft_sql.startswith("MATCH("), f"Unexpected ft.compile() output: {ft_sql!r}"
                 ft_score = literal_column(ft_sql).label("ft_score")

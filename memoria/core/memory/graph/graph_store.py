@@ -297,16 +297,26 @@ class GraphStore(DbConsumer):
             return
         with self._db() as db:
             from sqlalchemy import text as sa_text
-            for src, tgt, etype, weight in edges:
-                db.execute(
-                    sa_text(
-                        "INSERT INTO memory_graph_edges "
-                        "(source_id, target_id, edge_type, weight, user_id) "
-                        "VALUES (:src, :tgt, :etype, :w, :uid) "
-                        "ON DUPLICATE KEY UPDATE weight = :w"
-                    ),
-                    {"src": src, "tgt": tgt, "etype": etype, "w": weight, "uid": user_id},
-                )
+            # Build multi-value INSERT to avoid N round-trips.
+            # ON DUPLICATE KEY UPDATE handles composite-PK conflicts.
+            placeholders = ", ".join(
+                f"(:src{i}, :tgt{i}, :etype{i}, :w{i}, :uid)" for i in range(len(edges))
+            )
+            params: dict = {"uid": user_id}
+            for i, (src, tgt, etype, weight) in enumerate(edges):
+                params[f"src{i}"] = src
+                params[f"tgt{i}"] = tgt
+                params[f"etype{i}"] = etype
+                params[f"w{i}"] = weight
+            db.execute(
+                sa_text(
+                    "INSERT INTO memory_graph_edges "
+                    "(source_id, target_id, edge_type, weight, user_id) "
+                    f"VALUES {placeholders} "
+                    "ON DUPLICATE KEY UPDATE weight = VALUES(weight)"
+                ),
+                params,
+            )
             db.commit()
 
     def get_outgoing_edges(self, node_id: str) -> list[Edge]:
