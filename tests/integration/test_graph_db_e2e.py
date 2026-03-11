@@ -966,6 +966,72 @@ class TestEntityLinking:
             pending_edges.append(("x", "y", EdgeType.ENTITY_LINK.value, 1.0))
         assert len(pending_edges) == 0
 
+    def test_entity_type_persisted(self, store, user_id):
+        """entity_type is written to DB and readable back."""
+        from memoria.core.memory.graph.types import GraphNodeData, NodeType
+
+        node = GraphNodeData(
+            node_id=uuid4().hex, user_id=user_id,
+            node_type=NodeType.ENTITY, content="python",
+            entity_type="tech",
+            confidence=1.0, trust_tier="T1", importance=0.3,
+        )
+        store.create_node(node)
+        found = store.get_node(node.node_id)
+        assert found is not None
+        assert found.entity_type == "tech"
+
+    def test_link_weight_by_source(self, store, user_id):
+        """link_entities_batch produces different edge weights per source."""
+        from memoria.core.memory.graph.types import EdgeType, GraphNodeData, NodeType
+
+        # Create a content node to link from
+        content = GraphNodeData(
+            node_id=uuid4().hex, user_id=user_id,
+            node_type=NodeType.SEMANTIC, content="test",
+            confidence=0.9, trust_tier="T3", importance=0.5,
+        )
+        store.create_node(content)
+
+        for source, expected_weight in [("regex", 0.8), ("llm", 0.9), ("manual", 1.0)]:
+            ent_name = f"ent_{source}_{uuid4().hex[:6]}"
+            entities_per_node = {content.node_id: [(ent_name, "tech")]}
+            created, edges, _reused = store.link_entities_batch(
+                user_id, [content], entities_per_node, source=source,
+            )
+            assert len(created) == 1
+            assert created[0].entity_type == "tech"
+            assert len(edges) == 1
+            assert edges[0][3] == expected_weight
+            # Flush edges so they don't interfere
+            store.add_edges_batch(edges, user_id)
+
+    def test_link_reused_count(self, store, user_id):
+        """link_entities_batch returns correct reused count for existing entities."""
+        from memoria.core.memory.graph.types import GraphNodeData, NodeType
+
+        # Pre-create an entity node
+        store.create_node(GraphNodeData(
+            node_id=uuid4().hex, user_id=user_id,
+            node_type=NodeType.ENTITY, content="redis",
+            entity_type="tech", confidence=1.0, trust_tier="T1", importance=0.3,
+        ))
+        # Content node
+        content = GraphNodeData(
+            node_id=uuid4().hex, user_id=user_id,
+            node_type=NodeType.SEMANTIC, content="uses redis",
+            confidence=0.9, trust_tier="T3", importance=0.5,
+        )
+        store.create_node(content)
+
+        created, edges, reused = store.link_entities_batch(
+            user_id, [content], {content.node_id: [("redis", "tech"), ("newent", "concept")]},
+            source="manual",
+        )
+        assert len(created) == 1  # only "newent" is new
+        assert reused == 1        # "redis" was reused
+        assert len(edges) == 2    # both get edges
+
 
 class TestLLMEntityExtractorUnit:
     """LLM entity extraction error handling."""

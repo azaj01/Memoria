@@ -197,6 +197,7 @@ def _ddl_statements(dim: int) -> list[str]:
           `user_id`             VARCHAR(64)  NOT NULL,
           `node_type`           VARCHAR(10)  NOT NULL,
           `content`             TEXT         NOT NULL,
+          `entity_type`         VARCHAR(20)  DEFAULT NULL,
           `embedding`           VECF32({dim}) DEFAULT NULL,
           `event_id`            VARCHAR(32)  DEFAULT NULL,
           `memory_id`           VARCHAR(64)  DEFAULT NULL,
@@ -279,6 +280,18 @@ def _fix_embedding_dim(conn: Any, dim: int, *, force: bool = False) -> None:
             )
 
 
+def _ensure_entity_type_column(conn: Any) -> None:
+    """Add entity_type column to memory_graph_nodes if missing (v0.2.8 migration)."""
+    row = conn.execute(text(
+        "SHOW COLUMNS FROM `memory_graph_nodes` LIKE 'entity_type'"
+    )).fetchone()
+    if row is None:
+        logger.info("Adding entity_type column to memory_graph_nodes")
+        conn.execute(text(
+            "ALTER TABLE `memory_graph_nodes` ADD COLUMN `entity_type` VARCHAR(20) DEFAULT NULL AFTER `content`"
+        ))
+
+
 def ensure_tables(engine: Engine, *, dim: int | None = None, force: bool = False) -> list[str]:
     """Create database and memory tables if they don't exist.
 
@@ -303,5 +316,6 @@ def ensure_tables(engine: Engine, *, dim: int | None = None, force: bool = False
             conn.execute(text(ddl))
             created.append(name)
         _fix_embedding_dim(conn, dim, force=force)
+        _ensure_entity_type_column(conn)
         conn.commit()
     return created

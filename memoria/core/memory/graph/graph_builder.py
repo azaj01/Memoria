@@ -217,46 +217,23 @@ class GraphBuilder:
         content_nodes: list[GraphNodeData],
         pending_edges: list[tuple[str, str, str, float]],
     ) -> list[GraphNodeData]:
-        """Extract entities from content nodes and link them.
-
-        Reuses existing entity nodes (by name match) to build a shared entity graph.
-        """
+        """Extract entities from content nodes and link them via unified store method."""
         if not content_nodes:
             return []
 
-        created_entities: list[GraphNodeData] = []
-        # Cache: entity_name → node_id (avoid repeated DB lookups within batch)
-        entity_cache: dict[str, str] = {}
-
+        # Build {node_id: [(canonical_name, entity_type), ...]} for batch linking
+        entities_per_node: dict[str, list[tuple[str, str]]] = {}
         for node in content_nodes:
             if not node.content:
                 continue
             entities = extract_entities_lightweight(node.content)
-            for ent in entities:
-                ent_node_id = entity_cache.get(ent.name)
-                if not ent_node_id:
-                    # Check DB for existing entity node
-                    existing = self._store.find_entity_node(user_id, ent.name)
-                    if existing:
-                        ent_node_id = existing.node_id
-                    else:
-                        ent_node_id = _new_id()
-                        # Lightweight regex extraction → importance 0.3
-                        # (LLM extraction in service.extract_entities_llm uses 0.4)
-                        ent_node = GraphNodeData(
-                            node_id=ent_node_id, user_id=user_id,
-                            node_type=NodeType.ENTITY,
-                            content=ent.display_name,
-                            confidence=1.0, trust_tier="T1",
-                            importance=0.3,
-                        )
-                        self._store.create_node(ent_node)
-                        created_entities.append(ent_node)
-                    entity_cache[ent.name] = ent_node_id
+            if entities:
+                entities_per_node[node.node_id] = [
+                    (ent.name, ent.entity_type) for ent in entities
+                ]
 
-                pending_edges.append((
-                    node.node_id, ent_node_id,
-                    EdgeType.ENTITY_LINK.value, 1.0,
-                ))
-
-        return created_entities
+        created, new_edges, _reused = self._store.link_entities_batch(
+            user_id, content_nodes, entities_per_node, source="regex",
+        )
+        pending_edges.extend(new_edges)
+        return created

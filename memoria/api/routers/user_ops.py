@@ -126,11 +126,37 @@ def entity_candidates(
     edges = store.get_edges_for_nodes(node_ids)
     linked = {nid for nid, es in edges.items() if any(e.edge_type == EdgeType.ENTITY_LINK.value for e in es)}
     unlinked = [n for n in nodes if n.node_id not in linked]
-    return {"memories": [{"memory_id": n.memory_id or n.node_id, "content": n.content} for n in unlinked[:50]]}
+
+    # Include existing entity nodes so caller knows what types are already linked
+    entity_nodes = store.get_user_nodes(user_id, node_type=NodeType.ENTITY, active_only=True, load_embedding=False)
+    return {
+        "memories": [{"memory_id": n.memory_id or n.node_id, "content": n.content} for n in unlinked[:50]],
+        "existing_entities": [{"name": n.content, "entity_type": n.entity_type} for n in entity_nodes],
+    }
+
+
+# Allowed entity types — free-form input is normalized to these.
+VALID_ENTITY_TYPES = {"tech", "person", "repo", "project", "concept"}
 
 
 class LinkEntitiesRequest(BaseModel):
     entities: list[dict] = Field(..., min_length=1)
+
+
+@router.get("/entities")
+def list_entities(
+    user_id: str = Depends(get_current_user_id),
+    db_factory=Depends(get_db_factory),
+):
+    """List all entity nodes for the current user."""
+    from memoria.core.memory.graph.graph_store import GraphStore
+    from memoria.core.memory.graph.types import NodeType
+    store = GraphStore(db_factory)
+    nodes = store.get_user_nodes(user_id, node_type=NodeType.ENTITY, active_only=True, load_embedding=False)
+    return {"entities": [
+        {"node_id": n.node_id, "name": n.content, "entity_type": n.entity_type, "importance": round(n.importance, 2)}
+        for n in nodes
+    ]}
 
 
 @router.post("/extract-entities/link")
@@ -140,37 +166,38 @@ def link_entities(
     db_factory=Depends(get_db_factory),
 ):
     """Write entity nodes + edges from user-LLM extraction results."""
-    # Lazy imports: avoid loading graph subsystem at API startup
-    from memoria.core.memory.graph.graph_store import GraphStore, _new_id
-    from memoria.core.memory.graph.types import EdgeType, GraphNodeData, NodeType
+    from memoria.core.memory.graph.graph_store import GraphStore
+    from memoria.core.memory.graph.types import GraphNodeData, NodeType
     store = GraphStore(db_factory)
-    entity_cache: dict[str, str] = {}
-    pending_edges: list[tuple[str, str, str, float]] = []
-    entities_created = 0
+
+    # Resolve memory_ids → graph nodes, collect entities per node
+    nodes: list[GraphNodeData] = []
+    entities_per_node: dict[str, list[tuple[str, str]]] = {}
     for item in req.entities:
         memory_id = item.get("memory_id", "")
         node = store.get_node_by_memory_id(memory_id)
         if not node:
             continue
+        ent_list = []
         for ent in item.get("entities", []):
             name = str(ent.get("name", "")).strip().lower()
-            if not name:
-                continue
-            ent_node_id = entity_cache.get(name)
-            if not ent_node_id:
-                existing = store.find_entity_node(user_id, name)
-                if existing:
-                    ent_node_id = existing.node_id
-                else:
-                    ent_node_id = _new_id()
-                    store.create_node(GraphNodeData(
-                        node_id=ent_node_id, user_id=user_id,
-                        node_type=NodeType.ENTITY, content=name,
-                        confidence=1.0, trust_tier="T1", importance=0.4,
-                    ))
-                    entities_created += 1
-                entity_cache[name] = ent_node_id
-            pending_edges.append((node.node_id, ent_node_id, EdgeType.ENTITY_LINK.value, 1.0))
+            if name:
+                etype = str(ent.get("type", "concept")).lower()
+                if etype not in VALID_ENTITY_TYPES:
+                    etype = "concept"
+                ent_list.append((name, etype))
+        if ent_list:
+            nodes.append(node)
+            entities_per_node[node.node_id] = ent_list
+
+    created, pending_edges, reused = store.link_entities_batch(
+        user_id, nodes, entities_per_node, source="manual",
+    )
     if pending_edges:
         store.add_edges_batch(pending_edges, user_id)
-    return {"entities_created": entities_created, "edges_created": len(pending_edges)}
+    return {
+        "entities_created": len(created),
+        "entities_reused": reused,
+        "edges_created": len(pending_edges),
+        "entities": [{"name": e.content, "entity_type": e.entity_type} for e in created],
+    }

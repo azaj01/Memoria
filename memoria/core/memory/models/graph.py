@@ -35,6 +35,7 @@ class GraphNode(Base):
     node_type = Column(String(10), nullable=False)
 
     content = Column(Text, nullable=False)
+    entity_type = Column(String(20))  # entity nodes only: tech, person, repo, project, concept
     embedding = Column(VectorType(EMBEDDING_DIM, VectorPrecision.F32))
 
     event_id = Column(String(32))

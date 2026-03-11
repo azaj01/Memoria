@@ -50,6 +50,7 @@ class GraphNodeData:
     user_id: str
     node_type: NodeType
     content: str
+    entity_type: str | None = None  # entity nodes: tech, person, repo, project, concept
     embedding: list[float] | None = None
 
     # Source references

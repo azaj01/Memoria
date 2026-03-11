@@ -44,6 +44,8 @@ def _sigmoid(x: float) -> float:
 
 
 def _edge_weight(edge: Edge, task_boost: dict[str, float] | None = None) -> float:
+    # edge.weight carries per-edge quality (e.g. entity_link: regex=0.8, llm=0.9, manual=1.0).
+    # EDGE_TYPE_MULTIPLIER is the base multiplier per edge type.
     base = edge.weight * EDGE_TYPE_MULTIPLIER.get(edge.edge_type, 1.0)
     if task_boost:
         base *= task_boost.get(edge.edge_type, 1.0)

@@ -346,8 +346,7 @@ class GraphMemoryService:
             LLMEntityExtractionResult,
             extract_entities_llm as _extract_llm,
         )
-        from memoria.core.memory.graph.graph_store import _new_id
-        from memoria.core.memory.graph.types import EdgeType, GraphNodeData, NodeType
+        from memoria.core.memory.graph.types import EdgeType, NodeType
 
         result = LLMEntityExtractionResult()
 
@@ -372,37 +371,23 @@ class GraphMemoryService:
         if not unlinked:
             return {"total_memories": 0, "entities_found": 0, "edges_created": 0}
 
-        entity_cache: dict[str, str] = {}
-        pending_edges: list[tuple[str, str, str, float]] = []
-
+        # Extract entities per node via LLM
+        entities_per_node: dict[str, list[tuple[str, str]]] = {}
         for node in unlinked:
             try:
                 entities = _extract_llm(node.content, llm_client)
-                for ent in entities:
-                    result.entities_found += 1
-                    ent_node_id = entity_cache.get(ent.name)
-                    if not ent_node_id:
-                        existing = self._store.find_entity_node(user_id, ent.name)
-                        if existing:
-                            ent_node_id = existing.node_id
-                        else:
-                            ent_node_id = _new_id()
-                            # LLM extraction is more accurate → importance 0.4 (vs 0.3 for lightweight regex)
-                        self._store.create_node(GraphNodeData(
-                                node_id=ent_node_id, user_id=user_id,
-                                node_type=NodeType.ENTITY,
-                                content=ent.display_name,
-                                confidence=1.0, trust_tier="T1",
-                                importance=0.4,
-                            ))
-                        entity_cache[ent.name] = ent_node_id
-                    pending_edges.append((
-                        node.node_id, ent_node_id,
-                        EdgeType.ENTITY_LINK.value, 1.0,
-                    ))
+                if entities:
+                    entities_per_node[node.node_id] = [
+                        (ent.name, ent.entity_type) for ent in entities
+                    ]
+                    result.entities_found += len(entities)
             except Exception as e:
                 result.errors.append(f"{node.node_id}: {e}")
 
+        # Use unified linking
+        created, pending_edges, _reused = self._store.link_entities_batch(
+            user_id, unlinked, entities_per_node, source="llm",
+        )
         if pending_edges:
             self._store.add_edges_batch(pending_edges, user_id)
             result.edges_created = len(pending_edges)

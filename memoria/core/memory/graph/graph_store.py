@@ -7,7 +7,7 @@ import uuid
 
 from memoria.core.memory.models.graph import GraphEdge, GraphNode
 from memoria.core.db_consumer import DbConsumer
-from memoria.core.memory.graph.types import Edge, GraphNodeData, NodeType
+from memoria.core.memory.graph.types import Edge, EdgeType, GraphNodeData, NodeType
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ def _to_domain(row: GraphNode) -> GraphNodeData:
         user_id=row.user_id,
         node_type=NodeType(row.node_type),
         content=row.content,
+        entity_type=row.entity_type,
         embedding=list(row.embedding) if row.embedding is not None else None,
         event_id=row.event_id,
         memory_id=row.memory_id,
@@ -52,6 +53,7 @@ def _row_tuple_to_domain(row) -> GraphNodeData:
         user_id=row.user_id,
         node_type=NodeType(row.node_type),
         content=getattr(row, "content", ""),
+        entity_type=getattr(row, "entity_type", None),
         embedding=None,
         event_id=getattr(row, "event_id", None),
         memory_id=getattr(row, "memory_id", None),
@@ -77,6 +79,7 @@ def _to_row(node: GraphNodeData) -> dict:
         "user_id": node.user_id,
         "node_type": node.node_type.value if isinstance(node.node_type, NodeType) else node.node_type,
         "content": node.content,
+        "entity_type": node.entity_type,
         "embedding": node.embedding,
         "event_id": node.event_id,
         "memory_id": node.memory_id,
@@ -177,15 +180,73 @@ class GraphStore(DbConsumer):
             return _to_domain(row) if row else None
 
     def find_entity_node(self, user_id: str, entity_name: str) -> GraphNodeData | None:
-        """Find an existing active entity node by exact content match."""
+        """Find an existing active entity node by case-insensitive content match."""
         with self._db() as db:
             row = (
                 db.query(GraphNode)
                 .filter_by(user_id=user_id, node_type=NodeType.ENTITY.value, is_active=1)
-                .filter(GraphNode.content == entity_name)
+                .filter(GraphNode.content == entity_name.lower())
                 .first()
             )
             return _to_domain(row) if row else None
+
+    def link_entities_batch(
+        self,
+        user_id: str,
+        content_nodes: list[GraphNodeData],
+        entities_per_node: dict[str, list[tuple[str, str]]],
+        *,
+        source: str = "regex",
+    ) -> tuple[list[GraphNodeData], list[tuple[str, str, str, float]], int]:
+        """Unified entity linking: create entity nodes + collect edges.
+
+        Args:
+            content_nodes: nodes to link entities from.
+            entities_per_node: {node_id: [(canonical_name, entity_type), ...]}.
+            source: "regex" (weight 0.8), "llm" (0.9), or "manual" (1.0).
+
+        Returns:
+            (created_entity_nodes, pending_edges, reused_count).
+            reused_count = entities that already existed and were linked (not newly created).
+        """
+        _WEIGHT = {"regex": 0.8, "llm": 0.9, "manual": 1.0}
+        weight = _WEIGHT.get(source, 1.0)
+        _IMPORTANCE = {"regex": 0.3, "llm": 0.4, "manual": 0.5}
+        importance = _IMPORTANCE.get(source, 0.4)
+
+        entity_cache: dict[str, str] = {}
+        created: list[GraphNodeData] = []
+        reused = 0
+        pending_edges: list[tuple[str, str, str, float]] = []
+
+        for node in content_nodes:
+            ent_list = entities_per_node.get(node.node_id, [])
+            for canonical_name, etype in ent_list:
+                ent_node_id = entity_cache.get(canonical_name)
+                if not ent_node_id:
+                    existing = self.find_entity_node(user_id, canonical_name)
+                    if existing:
+                        ent_node_id = existing.node_id
+                        reused += 1
+                    else:
+                        ent_node_id = _new_id()
+                        ent_node = GraphNodeData(
+                            node_id=ent_node_id, user_id=user_id,
+                            node_type=NodeType.ENTITY,
+                            content=canonical_name.lower(),
+                            entity_type=etype,
+                            confidence=1.0, trust_tier="T1",
+                            importance=importance,
+                        )
+                        self.create_node(ent_node)
+                        created.append(ent_node)
+                    entity_cache[canonical_name] = ent_node_id
+                pending_edges.append((
+                    node.node_id, ent_node_id,
+                    EdgeType.ENTITY_LINK.value, weight,
+                ))
+
+        return created, pending_edges, reused
 
     def count_user_nodes(self, user_id: str) -> int:
         with self._db() as db:

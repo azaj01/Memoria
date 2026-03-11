@@ -384,40 +384,32 @@ class EmbeddedBackend(MemoryBackend):
         Args:
             entities: [{"memory_id": "...", "entities": [{"name": "...", "type": "..."}]}]
         """
-        from memoria.core.memory.graph.graph_store import GraphStore, _new_id
-        from memoria.core.memory.graph.types import EdgeType, GraphNodeData, NodeType
+        from memoria.core.memory.graph.graph_store import GraphStore
+        from memoria.core.memory.graph.types import GraphNodeData
         store = GraphStore(self._db_factory)
-        entity_cache: dict[str, str] = {}
-        pending_edges: list[tuple[str, str, str, float]] = []
-        entities_created = 0
+
+        nodes: list[GraphNodeData] = []
+        entities_per_node: dict[str, list[tuple[str, str]]] = {}
         for item in entities:
             memory_id = item.get("memory_id", "")
-            # Resolve memory_id → node_id
             node = store.get_node_by_memory_id(memory_id)
             if not node:
                 continue
+            ent_list = []
             for ent in item.get("entities", []):
                 name = str(ent.get("name", "")).strip().lower()
-                if not name:
-                    continue
-                ent_node_id = entity_cache.get(name)
-                if not ent_node_id:
-                    existing = store.find_entity_node(user_id, name)
-                    if existing:
-                        ent_node_id = existing.node_id
-                    else:
-                        ent_node_id = _new_id()
-                        store.create_node(GraphNodeData(
-                            node_id=ent_node_id, user_id=user_id,
-                            node_type=NodeType.ENTITY, content=name,
-                            confidence=1.0, trust_tier="T1", importance=0.4,
-                        ))
-                        entities_created += 1
-                    entity_cache[name] = ent_node_id
-                pending_edges.append((node.node_id, ent_node_id, EdgeType.ENTITY_LINK.value, 1.0))
+                if name:
+                    ent_list.append((name, ent.get("type", "concept")))
+            if ent_list:
+                nodes.append(node)
+                entities_per_node[node.node_id] = ent_list
+
+        created, pending_edges, reused = store.link_entities_batch(
+            user_id, nodes, entities_per_node, source="manual",
+        )
         if pending_edges:
             store.add_edges_batch(pending_edges, user_id)
-        return {"entities_created": entities_created, "edges_created": len(pending_edges)}
+        return {"entities_created": len(created), "entities_reused": reused, "edges_created": len(pending_edges)}
 
     # ── Branching ─────────────────────────────────────────────────────
 
@@ -897,7 +889,7 @@ class EmbeddedBackend(MemoryBackend):
             # Use INSERT+rowcount, not COUNT+INSERT, to avoid TOCTOU and double scan.
             node_result = db.execute(text(f"""
                 INSERT INTO memory_graph_nodes (
-                    node_id, user_id, node_type, content, embedding,
+                    node_id, user_id, node_type, content, entity_type, embedding,
                     event_id, memory_id, session_id,
                     confidence, trust_tier, importance,
                     source_nodes, conflicts_with, conflict_resolution,
@@ -905,7 +897,7 @@ class EmbeddedBackend(MemoryBackend):
                     is_active, superseded_by, created_at
                 )
                 SELECT
-                    b.node_id, b.user_id, b.node_type, b.content, b.embedding,
+                    b.node_id, b.user_id, b.node_type, b.content, b.entity_type, b.embedding,
                     b.event_id, b.memory_id, b.session_id,
                     b.confidence, b.trust_tier, b.importance,
                     b.source_nodes, b.conflicts_with, b.conflict_resolution,
