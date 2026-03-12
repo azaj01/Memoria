@@ -22,6 +22,12 @@ KNOWN_DIMENSIONS: dict[str, int] = {
     "BAAI/bge-small-en-v1.5": 512,
     "BAAI/bge-small-zh-v1.5": 512,
     # Sentence-transformers
+    # Sentence-transformers (short names without prefix also accepted)
+    "all-MiniLM-L6-v2": 384,
+    "all-MiniLM-L12-v2": 384,
+    "all-mpnet-base-v2": 768,
+    "paraphrase-multilingual-MiniLM-L12-v2": 384,
+    "paraphrase-multilingual-mpnet-base-v2": 768,
     "sentence-transformers/all-MiniLM-L6-v2": 384,
     "sentence-transformers/all-MiniLM-L12-v2": 384,
     "sentence-transformers/all-mpnet-base-v2": 768,

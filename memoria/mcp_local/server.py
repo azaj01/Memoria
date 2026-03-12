@@ -205,9 +205,8 @@ class EmbeddedBackend(MemoryBackend):
                 api_key=os.environ.get("EMBEDDING_API_KEY") or "",
                 base_url=os.environ.get("EMBEDDING_BASE_URL") or None,
             )
-        except Exception as exc:
-            # If user explicitly configured a non-local provider, fail loud —
-            # silent degradation when the user expects real embeddings is a bug.
+        except ImportError as exc:
+            # sentence-transformers not installed — warn and degrade gracefully.
             if provider not in ("local", "mock"):
                 logger.error(
                     "Embedding provider %r requested but init failed: %s. "

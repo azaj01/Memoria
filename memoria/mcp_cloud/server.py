@@ -345,7 +345,7 @@ def create_server(api_url: str, api_key: str) -> FastMCP:
         ]
         return _json_dumps(
             {
-                "mode": "remote",
+                "mode": "cloud",
                 "tools": sorted(tools),
                 "note": "Branch/rollback/governance availability depends on server tier.",
             }

@@ -261,3 +261,48 @@ class TestSaTypesEmbeddingDim:
 
     def test_explicit_value_used(self, monkeypatch):
         assert self._reload_dim(monkeypatch, "1024") == 1024
+
+
+# ── _make_embed_client (server default path) ──────────────────────────
+
+
+class TestMakeEmbedClient:
+    """Regression: default local embedding path in MCP server."""
+
+    def test_short_model_name_resolves_dim(self):
+        """'all-MiniLM-L6-v2' (no prefix) must resolve to dim=384, not 1024."""
+        from memoria.core.embedding.client import KNOWN_DIMENSIONS
+
+        assert KNOWN_DIMENSIONS.get("all-MiniLM-L6-v2") == 384
+
+    def test_import_error_returns_none(self, monkeypatch):
+        """If sentence_transformers not installed, _make_embed_client returns None."""
+        monkeypatch.delenv("EMBEDDING_PROVIDER", raising=False)
+        monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
+        monkeypatch.delenv("EMBEDDING_DIM", raising=False)
+
+        with patch(
+            "memoria.core.embedding.providers.LocalProvider._load",
+            side_effect=ImportError("no module"),
+        ):
+            from memoria.mcp_local.server import EmbeddedBackend
+
+            result = EmbeddedBackend._make_embed_client()
+        assert result is None
+
+    def test_value_error_propagates(self, monkeypatch):
+        """Dim mismatch (ValueError) must NOT be silently swallowed."""
+        monkeypatch.setenv("EMBEDDING_PROVIDER", "local")
+        monkeypatch.setenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+        monkeypatch.setenv("EMBEDDING_DIM", "999")  # wrong dim
+
+        with patch(
+            "memoria.core.embedding.providers.LocalProvider._load",
+            return_value=MagicMock(get_sentence_embedding_dimension=lambda: 384),
+        ):
+            from memoria.mcp_local.server import EmbeddedBackend
+
+            with pytest.raises(
+                ValueError, match="fixed dimension 384.*config says 999"
+            ):
+                EmbeddedBackend._make_embed_client()

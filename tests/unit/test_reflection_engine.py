@@ -74,11 +74,13 @@ class TestMemoryWriterProtocolCompliance:
         writer.store.assert_called_once()
         assert not hasattr(writer, "store_memory")
 
-    def test_governance_scheduler_satisfies_writer_store(self, db_factory):
+    def test_governance_scheduler_satisfies_writer_store(self):
         """GovernanceScheduler must have store() matching MemoryWriter protocol."""
+        from unittest.mock import MagicMock
+
         from memoria.core.memory.tabular.governance import GovernanceScheduler
 
-        gov = GovernanceScheduler(db_factory, llm_client=None)
+        gov = GovernanceScheduler(MagicMock(), llm_client=None)
         assert hasattr(gov, "store"), "GovernanceScheduler must implement store()"
         assert callable(gov.store)
 
