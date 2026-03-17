@@ -1,2 +1,10 @@
 [target.aarch64-unknown-linux-gnu]
-pre-build = ["apt-get update && apt-get install -y pkg-config libssl-dev"]
+# Vendored OpenSSL needs a C compiler, perl, and make (perl/make already in cross image).
+# Do NOT install system libssl-dev — the cross image (Xenial) has 1.0.2 which is
+# incompatible with openssl-sys. We use openssl = { features = ["vendored"] } instead.
+
+[build.env]
+# Pass these into the cross Docker container so vendored OpenSSL build works:
+# - OPENSSL_NO_PKG_CONFIG: skip system libssl, force build from source
+# - SQLX_OFFLINE: don't require a live database for compile-time query checks
+passthrough = ["OPENSSL_NO_PKG_CONFIG", "SQLX_OFFLINE"]
