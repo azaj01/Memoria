@@ -1,36 +1,36 @@
 # Memoria — All-in-One
 #
-# Build context is the project root (Memoria depends on core/ and api/ shared files).
-# Both invocation styles work — context: .. is always relative to this file's location.
-#
 # Usage:
-#   cd memoria && docker compose up -d
-#   # or: docker compose -f memoria/docker-compose.yml up -d
+#   docker compose up -d
 
 services:
 
   matrixone-init:
     image: ${MATRIXONE_IMAGE:-matrixorigin/matrixone:latest}
     user: root
-    entrypoint: ["sh", "-c", "chown -R 1000:1000 /mo-data"]
+    entrypoint: ["sh", "-c", "chown -R ${DOCKER_UID:-1000}:${DOCKER_GID:-1000} /mo-data && mkdir -p /logs && chown -R ${DOCKER_UID:-1000}:${DOCKER_GID:-1000} /logs"]
     volumes:
       - ${MATRIXONE_DATA_DIR:-./data/matrixone}:/mo-data
+      - ./data/logs/matrixone:/logs
     networks:
       - memoria-net
 
   matrixone:
     image: ${MATRIXONE_IMAGE:-matrixorigin/matrixone:latest}
     hostname: matrixone
-    user: "1000:1000"
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     depends_on:
       matrixone-init:
         condition: service_completed_successfully
     ports:
       - "${MATRIXONE_PORT:-6001}:6001"
-      # Debug HTTP port (pprof) — disabled by default, set MATRIXONE_DEBUG_PORT to enable
       - "${MATRIXONE_DEBUG_PORT:-}:6060"
     volumes:
       - ${MATRIXONE_DATA_DIR:-./data/matrixone}:/mo-data
+      - ./data/logs/matrixone:/logs
+      - ./config/matrixone:/etc/memoria:ro
+    entrypoint: ["/mo-service"]
+    command: ["-debug-http=:12345", "-launch", "/etc/memoria/launch.toml"]
     environment:
       - TZ=Asia/Shanghai
     networks:
@@ -42,40 +42,48 @@ services:
       retries: 12
       start_period: 30s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
 
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: memoria/Dockerfile
       args:
-        # Set INSTALL_EXTRAS=local-embedding to bundle sentence-transformers (~500MB).
-        # Default is empty — use an external embedding provider via MEMORIA_EMBEDDING_* env vars.
-        INSTALL_EXTRAS: ${INSTALL_EXTRAS:-}
+        - http_proxy=${http_proxy:-}
+        - https_proxy=${https_proxy:-}
+        - no_proxy=${no_proxy:-}
     hostname: memoria-api
     ports:
       - "${API_PORT:-8100}:8100"
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    volumes:
+      - ${MEMORIA_LOG_DIR:-./data/logs/api}:/var/log/memoria
     environment:
-      - MEMORIA_DB_HOST=matrixone
-      - MEMORIA_DB_PORT=6001
-      - MEMORIA_DB_USER=${MEMORIA_DB_USER:-root}
-      - MEMORIA_DB_PASSWORD=${MEMORIA_DB_PASSWORD:-111}
-      - MEMORIA_DB_NAME=${MEMORIA_DB_NAME:-memoria}
-      - MEMORIA_MASTER_KEY=${MEMORIA_MASTER_KEY:?Set MEMORIA_MASTER_KEY in .env (min 16 chars)}
-      - MEMORIA_EMBEDDING_PROVIDER=${MEMORIA_EMBEDDING_PROVIDER:-local}
-      - MEMORIA_EMBEDDING_MODEL=${MEMORIA_EMBEDDING_MODEL:-all-MiniLM-L6-v2}
-      - MEMORIA_EMBEDDING_API_KEY=${MEMORIA_EMBEDDING_API_KEY:-}
-      - MEMORIA_EMBEDDING_BASE_URL=${MEMORIA_EMBEDDING_BASE_URL:-}
-      # Rate limits — override for testing: MEMORIA_RATE_LIMIT_AUTH_KEYS=1000,60
-      - MEMORIA_RATE_LIMIT_AUTH_KEYS=${MEMORIA_RATE_LIMIT_AUTH_KEYS:-20,60}
-      - MEMORIA_RATE_LIMIT_DEFAULT=${MEMORIA_RATE_LIMIT_DEFAULT:-1000,60}
-      - MEMORIA_LLM_API_KEY=${MEMORIA_LLM_API_KEY:-}
-      - MEMORIA_LLM_BASE_URL=${MEMORIA_LLM_BASE_URL:-}
-      - MEMORIA_LLM_MODEL=${MEMORIA_LLM_MODEL:-gpt-4o-mini}
+      - RUST_LOG=${RUST_LOG:-info,memoria_api=info,memoria_service=info,tower_http=info}
+      - DATABASE_URL=mysql://root:${MEMORIA_DB_PASSWORD:-111}@matrixone:6001/${MEMORIA_DB_NAME:-memoria}
+      - MASTER_KEY=${MEMORIA_MASTER_KEY:?Set MEMORIA_MASTER_KEY in .env (min 16 chars)}
+      - EMBEDDING_PROVIDER=${MEMORIA_EMBEDDING_PROVIDER:-openai}
+      - EMBEDDING_MODEL=${MEMORIA_EMBEDDING_MODEL:-BAAI/bge-m3}
+      - EMBEDDING_DIM=${MEMORIA_EMBEDDING_DIM:-1024}
+      - EMBEDDING_API_KEY=${MEMORIA_EMBEDDING_API_KEY:-}
+      - EMBEDDING_BASE_URL=${MEMORIA_EMBEDDING_BASE_URL:-}
+      - LLM_API_KEY=${MEMORIA_LLM_API_KEY:-}
+      - LLM_BASE_URL=${MEMORIA_LLM_BASE_URL:-}
+      - LLM_MODEL=${MEMORIA_LLM_MODEL:-gpt-4o-mini}
     depends_on:
       matrixone:
         condition: service_healthy
     networks:
       - memoria-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     restart: unless-stopped
 
 volumes: {}
