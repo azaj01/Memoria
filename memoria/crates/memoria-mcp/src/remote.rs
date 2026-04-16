@@ -1,6 +1,7 @@
 //! Remote mode: proxy all MCP tool calls to a Memoria REST API server.
 //! Mirrors Python's HTTPBackend.
 
+use crate::purge_args::parse_memory_purge_args;
 use anyhow::Result;
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -176,9 +177,8 @@ impl RemoteClient {
             }
 
             "memory_purge" => {
-                let memory_id = args["memory_id"].as_str().unwrap_or("");
-                let topic = args["topic"].as_str().unwrap_or("");
-                if !memory_id.is_empty() {
+                let purge_args = parse_memory_purge_args(&args)?;
+                if let Some(memory_id) = purge_args.memory_id {
                     let ids: Vec<&str> = memory_id
                         .split(',')
                         .map(str::trim)
@@ -196,7 +196,7 @@ impl RemoteClient {
                         "Purged {} memory(s)",
                         body["purged"].as_i64().unwrap_or(count as i64)
                     )))
-                } else if !topic.is_empty() {
+                } else if let Some(topic) = purge_args.topic {
                     let r = self
                         .client
                         .post(self.url("/v1/memories/purge"))
@@ -208,8 +208,29 @@ impl RemoteClient {
                         "Purged {} memory(s) matching '{topic}'",
                         body["purged"].as_i64().unwrap_or(0)
                     )))
+                } else if let Some(session_id) = purge_args.session_id {
+                    let r = self
+                        .client
+                        .post(self.url("/v1/memories/purge"))
+                        .json(&json!({
+                            "session_id": session_id,
+                            "memory_types": purge_args.memory_types.map(|memory_types| {
+                                memory_types
+                                    .into_iter()
+                                    .map(|memory_type| memory_type.to_string())
+                                    .collect::<Vec<_>>()
+                            }),
+                        }))
+                        .send()
+                        .await?;
+                    let body = Self::parse_response(r).await?;
+                    Ok(Self::mcp_text(&format!(
+                        "Purged {} memory(s) for session '{}'",
+                        body["purged"].as_i64().unwrap_or(0),
+                        session_id
+                    )))
                 } else {
-                    Ok(Self::mcp_text("Provide memory_id or topic"))
+                    Ok(Self::mcp_text("Provide memory_id, topic, or session_id"))
                 }
             }
 

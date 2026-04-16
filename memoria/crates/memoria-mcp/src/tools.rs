@@ -1,6 +1,7 @@
 //! 8 core MCP tools for Phase 2.
 //! Phase 4 will add 14 more (Git-for-Data, admin, graph).
 
+use crate::purge_args::parse_memory_purge_args;
 use anyhow::Result;
 use memoria_core::{MemoryType, TrustTier};
 use memoria_git::GitForDataService;
@@ -145,12 +146,14 @@ pub fn list() -> Value {
         },
         {
             "name": "memory_purge",
-            "description": "Delete memories by ID (single or comma-separated batch) or by topic keyword",
+            "description": "Delete memories by ID, by topic keyword, or by exact session_id with optional memory type filtering",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "memory_id": {"type": "string", "description": "Single ID or comma-separated batch"},
                     "topic": {"type": "string", "description": "Keyword — bulk-delete all matching memories"},
+                    "session_id": {"type": "string", "description": "Exact session identifier — bulk-delete memories from that session"},
+                    "memory_types": {"type": "array", "items": {"type": "string", "enum": ["semantic", "working", "episodic", "profile", "tool_result", "procedural"]}, "description": "Optional memory type filter. Only valid with session_id"},
                     "reason": {"type": "string"}
                 }
             }
@@ -424,9 +427,8 @@ pub async fn call(
         }
 
         ToolCallName::MemoryPurge => {
-            let memory_id = args["memory_id"].as_str().unwrap_or("");
-            let topic = args["topic"].as_str().unwrap_or("");
-            if !memory_id.is_empty() {
+            let purge_args = parse_memory_purge_args(&args)?;
+            if let Some(memory_id) = purge_args.memory_id {
                 // Batch: comma-separated IDs
                 let ids: Vec<&str> = memory_id
                     .split(',')
@@ -438,15 +440,26 @@ pub async fn call(
                     &format!("Purged {} memory(s)", result.purged),
                     &result,
                 )))
-            } else if !topic.is_empty() {
+            } else if let Some(topic) = purge_args.topic {
                 // Bulk by keyword: exact text match then purge
-                let result = service.purge_by_topic(user_id, topic).await?;
+                let result = service.purge_by_topic(user_id, &topic).await?;
                 Ok(mcp_text(&format_purge_msg(
                     &format!("Purged {} memory(s) matching '{topic}'", result.purged),
                     &result,
                 )))
+            } else if let Some(session_id) = purge_args.session_id {
+                let result = service
+                    .purge_by_session_id(user_id, &session_id, purge_args.memory_types.as_deref())
+                    .await?;
+                Ok(mcp_text(&format_purge_msg(
+                    &format!(
+                        "Purged {} memory(s) for session '{session_id}'",
+                        result.purged
+                    ),
+                    &result,
+                )))
             } else {
-                Ok(mcp_text("Provide memory_id or topic"))
+                Ok(mcp_text("Provide memory_id, topic, or session_id"))
             }
         }
 
